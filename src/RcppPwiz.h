@@ -96,6 +96,9 @@ public:
 
     Rcpp::List getPeakList(int whichScan);
 
+    Rcpp::List getPeakList2(Rcpp::IntegerVector whichScan);
+    Rcpp::List getPeakList3(Rcpp::IntegerVector whichScan);
+
     Rcpp::NumericMatrix get3DMap(std::vector<int> scanNumbers, double whichMzLow, double whichMzHigh, double resMz);
 
 };

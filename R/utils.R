@@ -10,6 +10,32 @@
     }
 }
 
+## Have to test:
+## 1) scans not being numeric
+## 2) scans being an unordered integer
+## 3) scans being out of bound
+.peaks2 <- function(object, scans) {
+    if (missing(scans))
+        scans <- 1:length(object)
+    if (!is.numeric(scans))
+        stop("'scans' is supposed to be an integer vector")
+    res <- object@backend$getPeakList2(as.integer(scans))
+    if (length(scans) == 1)
+        res <- res[[1]]
+    res
+}
+
+.peaks3 <- function(object, scans) {
+    if (missing(scans))
+        scans <- 1:length(object)
+    if (!is.numeric(scans))
+        stop("'scans' is supposed to be an integer vector")
+    res <- object@backend$getPeakList3(as.integer(scans))
+    if (length(scans) == 1)
+        res <- res[[1]]
+    res
+}
+
 
 setMethod("isolationWindow", "character",
           function(object, ...) .isolationWindow(object, ...))

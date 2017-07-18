@@ -1,0 +1,198 @@
+We could try to improve the =peaks= method by performing the loop in C instead of
+R. This might speed up things a) because a for loop in C is supposedly faster
+than =sapply= in R and b) there is no need to always re-access the run of the
+=msdata=. Whether the latter really improves performance has to be however
+determined.
+
+Below we benchmark the =getPeakList= and =getPeakList2= (and =getPeakList3=) C++ methods (called /via/
+=mzR::peaks= and =mzR:::.peaks2= (and =mzR:::.peaks3=) respectively.
+
++ =getPeakList2= does the loop over all spectra in C++ in contrast to the default
+  =getPeakList= method that returns just the mz and intensities from one spectrum
+  and does the looping in R.
++ =getPeakList3= is similar to =getPeakList2=, but uses a different way to extract
+  the mz and intensity values from the pwiz =Spectrum= object. Instead of
+  extracting the mz-intensity pairs from the object it directly extracts the mz
+  and intensity (binary) arrays. This avoids looping twice over the mz-intensity
+  values (i.e. the for loop to create the mz-intensity pair array within the
+  pwiz =Spectrum= object).
+
+#+BEGIN_SRC R
+  library(mzR)
+  library(microbenchmark)
+  library(testthat)
+
+  SN <- "/Users/jo/data/2016/2016-11/NoSN/"
+  fl <- dir(SN, full.names = TRUE)
+
+  fh <- openMSfile(fl[1])
+
+  ## First file has 1720 spectra.
+  ## hdr <- mzR::header(fh) ## That's to avoid the error:
+  ## [MSData::Spectrum::getMZIntensityPairs()] Sizes do not match. 
+
+  pks <- mzR::peaks(fh)
+  pks2 <- mzR:::.peaks2(fh)
+  pks3 <- mzR:::.peaks3(fh)
+  expect_equal(pks, pks2)
+  expect_equal(pks, pks3)
+
+  microbenchmark(mzR::peaks(fh), mzR:::.peaks2(fh), mzR:::.peaks3(fh), times = 10)
+
+  mzR::close(fh)
+
+  ## Second file:
+  f <- "/Users/jo/data/2017/profile/090217_21m_RT_-80_2h_b-AB-profile.mzML.gz"
+  fh <- openMSfile(f)
+  ## hdr <- mzR::header(fh)
+
+  pks <- mzR::peaks(fh)
+  pks2 <- mzR:::.peaks2(fh)
+  pks3 <- mzR:::.peaks3(fh)
+  expect_equal(pks, pks2)
+  expect_equal(pks, pks3)
+
+  microbenchmark(mzR::peaks(fh), mzR:::.peaks2(fh), mzR:::.peaks3(fh), times = 5)
+
+  mzR::close(fh)
+
+  ## Third file:
+  f <- msdata::proteomics(full.names = TRUE,
+			  pattern = "TMT_Erwinia_1uLSike_Top10HCD_isol2_45stepped_60min_01.mzML.gz")
+  fh <- openMSfile(f)
+
+  pks <- mzR::peaks(fh)
+  pks2 <- mzR:::.peaks2(fh)
+  pks3 <- mzR:::.peaks3(fh)
+  expect_equal(pks, pks2)
+  expect_equal(pks, pks3)
+
+  microbenchmark(mzR::peaks(fh), mzR:::.peaks2(fh), mzR:::.peaks3(fh), times = 7)
+
+  mzR::close(fh)
+#+END_SRC
+
+To avoid/fix issue #170 from MSnbase, i.e. random "Sizes do not match" errors if
+=peaks= is called without having called =header= before. Possible solutions:
++ [ ] Just open a =RAMPAdapter= on the file.
++ [ ] Once we loaded the spectrum, get e.g. polarity from it or the ID.
++ [ ] Pass only integer values as indices?
+
+
+Trying to reproduce the error in MSnbase issue #170.
+
+#+BEGIN_SRC R
+  library(mzR)
+  SN <- "/Users/jo/data/2016/2016-11/NoSN/"
+  fl <- dir(SN, full.names = TRUE)
+
+  fh <- openMSfile(fl[1])
+
+  for (i in 1:1000) {
+      if (i %% 10 == 0)
+	  cat("i: ", i, "\n")
+      pks <- mzR::peaks(fh)
+  }
+  mzR::close(fh)
+  ## That seems to work nicely.
+
+
+  for (i in 1:1000) {
+      if (i %% 10 == 0)
+	  cat("i: ", i, "\n")
+      fh <- openMSfile(fl[1])
+      pks <- mzR::peaks(fh)
+      close(fh)
+      rm(fh)
+  }
+  ## That's OK.
+
+  ## Trying to simulate the failing thing.
+  for (i in 1:length(fl)) {
+      cat("file: ", i, "\n")
+      fh <- openMSfile(fl[i])
+      pks <- mzR::peaks(fh)
+      close(fh)
+      rm(fh)
+  }
+  ## Fails!
+
+  for (i in 1:length(fl)) {
+      cat("file: ", i, "\n")
+      fh <- openMSfile(fl[i])
+      lastS <- length(fl) ## FAILS
+      hrd <- mzR::header(fh, as.integer(lastS))
+      pks <- mzR::peaks(fh)
+      ## nValues <- base::lengths(pks, use.names = FALSE) / 2
+      ## allSpect <- do.call(rbind, pks)
+      ## res <- MSnbase:::Spectra1_mz_sorted(peaksCount = nValues,
+      ##     				acquisitionNum = 1:length(nValues),
+      ##     				scanIndex = 1:length(nValues),
+      ##     				mz = allSpect[, 1],
+      ##     				intensity = allSpect[, 2],
+      ##     				nvalues = nValues)
+      close(fh)
+      rm(fh)
+  }
+
+
+  ## Try using peaks3.
+  for (i in 1:length(fl)) {
+      cat("file: ", i, "\n")
+      fh <- openMSfile(fl[i])
+      pks <- mzR:::.peaks3(fh)
+      close(fh)
+      rm(fh)
+  }
+  ## 6 times OK: 2 with retries, 4 without.
+
+  ## Try using peaks2.
+  for (i in 1:length(fl)) {
+      cat("file: ", i, "\n")
+      fh <- openMSfile(fl[i])
+      pks <- mzR:::.peaks2(fh)
+      close(fh)
+      rm(fh)
+  }
+  ## Fails just like the original peaks call (getMZIntensityPairs error)
+#+END_SRC
+
+*Error report*
++ Reading the same file 1000 times seems to be OK.
++ Reading the files sequentially causes the error.
++ Calling =header= before =peaks= seems to do the trick. It seems that it doesn't
+  have to be all headers:
+  - Reading the last header seems to not cause an error. Did this after getting
+    first the error and by executing only the code itself and it worked 3 times.
+
+*Note*:
+- seems that either the mz or the intensity array is (randomly) empty. A
+  possible solution could be to try to re-load the spectrum in such cases.
+- Reading spectra header info followed by loading the full data seems to be OK,
+  eventually better than reading the spectrum data from the beginning?
+- Reading the mz and intensity arrays separately has the advantage that we can
+  circumvent the problem and try to re-read the respective spectrum. But this
+  seems to cause a segfault at some point!
+- Reopening the file does not help to avoid the segfault from above.
+- =.peaks3=: reading spectra first without data, accessing some parameters and
+  re-loading it then with data. Access binary arrays separately and evaluate if
+  their sizes match. If not simply load the spectrum (with data) and get the
+  arrays again. If that fails call =Rcpp::stop=. This did run 6 times without
+  problem (2 runs had multiple retries, the others not).
+- =.peaks2=:
+
+I don't get any errors if we're just reading the peaks and closing the
+connection etc. but once I add additional calls I get the error. Actually no,
+now I get the error each time.
+
+Other performance issues: getting peaks and/or header from an gz file is slooow.
+
+Evaluating the performance of the fix.
+
+#+BEGIN_SRC R
+  ## Do this on a simple file.
+
+  ## Do this on a gzipped file.
+#+END_SRC
+
+

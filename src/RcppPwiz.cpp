@@ -338,6 +338,176 @@ Rcpp::List RcppPwiz::getPeakList ( int whichScan )
     return Rcpp::List::create( );
 }
 
+// Trying to avoid issue #170 in MSnbase.
+// whichScan can be a integer vector instead of a single int!
+Rcpp::List RcppPwiz::getPeakList2 (Rcpp::IntegerVector whichScan) {
+    Rprintf("Info: calling getPeakList2.\n ");
+    if (msd != NULL) {
+      int N_scans = whichScan.size();
+      RAMPAdapter * adapter = new RAMPAdapter(filename);
+      ScanHeaderStruct hdr;
+      // int N_spectra = slp->size();
+      int N_spectra = adapter->scanCount();
+      Rcpp::List res_list(N_scans);
+      SpectrumListPtr slp = msd->run.spectrumListPtr;
+
+      // two separate loops, reading header and then the spectra...
+      for (int i = 0; i < N_scans; i++) {
+	size_t current_scan = whichScan[i];
+	if (current_scan <= 0 || (current_scan > N_spectra)) {
+	  Rprintf("Warning: index %d out of bounds.\n", current_scan);
+	  continue;
+	}
+	// First use RAMPAdaptor to read the header.
+	adapter->getScanHeader((current_scan -1), hdr, false);
+	SpectrumPtr s = slp->spectrum(current_scan -1, false);
+      }
+      delete adapter;
+      adapter = NULL;
+
+      delete msd;
+      msd = NULL;
+      msd = new MSDataFile(filename);
+      slp = msd->run.spectrumListPtr;
+      for (int i = 0; i < N_scans; i++) {
+	size_t current_scan = whichScan[i];
+	if (current_scan <= 0 || (current_scan > N_spectra)) {
+	  Rprintf("Warning: index %d out of bounds.\n", current_scan);
+	  continue;
+	}
+	// Then get the spectra using pwiz...
+	SpectrumPtr s = slp->spectrum((current_scan -1), false);
+	s = slp->spectrum(s, true);
+	// std::string s_id = s->id;
+	// CVParam cv_param = s->cvParamChild(MS_scan_polarity);
+
+	// To read the data using RAMPAdaptor.
+	// vector<double> buffer;
+	// adapter->getScanPeaks(current_scan - 1, buffer);
+	// int buffer_len = buffer.size();
+	// if (buffer_len != 0) {
+	//   Rcpp::NumericMatrix peaks(buffer_len / 2, 2);
+	//   int index = 0;
+	//   for (int j = 0; j < buffer_len; j+=2) {
+	//     // peaks(index, 0) = static_cast<double>(buffer[j]);
+	//     // peaks(index, 1) = static_cast<double>(buffer[j+1]);
+	//     peaks(index, 0) = buffer[j];
+	//     peaks(index, 1) = buffer[j+1];
+	//     index++;
+	//   }
+	//   res_list[i] = peaks;
+	// } else {
+	//   res_list[i] = Rcpp::NumericMatrix(0, 2);
+	// }
+	
+        vector<MZIntensityPair> pairs;
+	s->getMZIntensityPairs(pairs);
+	
+	Rcpp::NumericMatrix peaks(pairs.size(), 2);
+	
+	if(pairs.size()!=0) {
+	  for (int j = 0; j < pairs.size(); j++) {
+	    peaks(j, 0) = pairs[j].mz;
+	    peaks(j, 1) = pairs[j].intensity;
+	    // MZIntensityPair p = pairs.at(j);
+	    // peaks(i,0) = p.mz;
+	    // peaks(i,1) = p.intensity;
+	  } 
+	}
+	res_list[i] = peaks;
+      }
+      return(res_list);
+    }
+    Rprintf("Warning: pwiz not yet initialized.\n ");
+    return Rcpp::List::create( );
+}
+
+// Trying to avoid issue #170 in MSnbase.
+// whichScan can be a integer vector instead of a single int!
+Rcpp::List RcppPwiz::getPeakList3 (Rcpp::IntegerVector whichScan) {
+    Rprintf("Info: calling getPeakList3.\n ");
+    if (msd != NULL) {
+      // try {
+	size_t N_scans = whichScan.size();
+	SpectrumListPtr slp = msd->run.spectrumListPtr;
+	size_t N_spectra = slp->size();
+	Rcpp::List res_list(N_scans);
+	
+	for (int i = 0; i < N_scans; i++) {
+	  size_t current_scan = whichScan[i];
+	  if (current_scan <= 0 || (current_scan > N_spectra)) {
+	    Rprintf("Warning: index %d out of bounds.\n", current_scan);
+	    continue;
+	  }
+	  // Reading first "only" the header and subsequently the data - seems
+	  // to be more stable.
+	  SpectrumPtr s = slp->spectrum((current_scan - 1), false);
+	  std::string s_id = s->id;
+	  CVParam cv_param = s->cvParamChild(MS_scan_polarity);
+	  // Load the binary data.
+	  if (!s->hasBinaryData()) {
+	    s = slp->spectrum(s, true);
+	  }
+	  // Directy extract the binary arrays.
+	  size_t def_array_length = s->defaultArrayLength;
+	  // Reading the two arrays separately allows us to catch eventual
+	  // errors here.
+	  BinaryDataArrayPtr mz_array = s->getMZArray();
+	  BinaryDataArrayPtr int_array = s->getIntensityArray();
+	  size_t n_mz = mz_array->data.size();
+	  size_t n_int = int_array->data.size();
+	  if (n_mz != def_array_length | n_int != def_array_length) {
+	    Rprintf("What the heck? Got n_mz = %d and n_int = %d\n", n_mz, n_int);
+	    Rprintf("Retrying...\n");
+	    // Completely re-load the file!
+	    // delete msd;
+	    // msd = NULL;
+	    // msd = new MSDataFile(filename);
+	    // slp = msd->run.spectrumListPtr;
+	    // N_spectra = slp->size();
+	    // Re-load the spectrum.
+	    s = slp->spectrum((current_scan -1), true);
+	    // if (!s->hasBinaryData()) {
+	    //   s = slp->spectrum(s, true);
+	    // }
+	    mz_array = s->getMZArray();
+	    int_array = s->getIntensityArray();
+	    n_mz = mz_array->data.size();
+	    n_int = int_array->data.size();
+	    if (n_mz != def_array_length | n_int != def_array_length) {
+	      Rprintf("Caught exception during spectra reading. Please report at https://github.com/sneumann/mzR/issues\n");
+	      // throw std::length_error("Length of mz and intensity arrays do not match");
+	      Rcpp::stop("Length of mz and intensity arrays do not match");
+	    }
+	  }
+	  
+	  Rcpp::NumericMatrix peaks(n_mz, 2);
+	  
+	  if(n_mz != 0) {
+	    double* mz = &mz_array->data[0];
+	    double* intensity = &int_array->data[0];
+	    for (int j = 0; j < n_mz; j++) {
+	      peaks(j, 0) = *mz++;
+	      peaks(j, 1) = *intensity++;
+	    } 
+	  }
+	  res_list[i] = peaks;
+	}
+	return(res_list);
+      // } catch (std::exception &ex) {
+      // 	// Try it one more time?
+      // 	Rprintf("Caught exception during spectra reading. Please report at https://github.com/sneumann/mzR/issues\n");
+      // 	forward_exception_to_r(ex);
+      // } catch (...) {
+      // 	Rprintf("Caught unexpected exception during spectra reading. Please report at https://github.com/sneumann/mzR/issues\n");
+      // 	::Rf_error("c++ exception (unknown reason)");
+      // }
+    }
+    Rprintf("Warning: pwiz not yet initialized.\n ");
+    return Rcpp::List::create( );
+}
+
+
 /**
  * copyWriteMSFile copies (general) content from the originating MS file and
  * replaces the Spectrum list with the new data provided with arguments
