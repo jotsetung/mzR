@@ -427,81 +427,71 @@ Rcpp::List RcppPwiz::getPeakList2 (Rcpp::IntegerVector whichScan) {
 Rcpp::List RcppPwiz::getPeakList3 (Rcpp::IntegerVector whichScan) {
     Rprintf("Info: calling getPeakList3.\n ");
     if (msd != NULL) {
-      // try {
-	size_t N_scans = whichScan.size();
-	SpectrumListPtr slp = msd->run.spectrumListPtr;
-	size_t N_spectra = slp->size();
-	Rcpp::List res_list(N_scans);
-	
-	for (int i = 0; i < N_scans; i++) {
-	  size_t current_scan = whichScan[i];
-	  if (current_scan <= 0 || (current_scan > N_spectra)) {
-	    Rprintf("Warning: index %d out of bounds.\n", current_scan);
-	    continue;
-	  }
-	  // Reading first "only" the header and subsequently the data - seems
-	  // to be more stable.
-	  SpectrumPtr s = slp->spectrum((current_scan - 1), false);
-	  std::string s_id = s->id;
-	  CVParam cv_param = s->cvParamChild(MS_scan_polarity);
-	  // Load the binary data.
+      size_t N_scans = whichScan.size();
+      SpectrumListPtr slp = msd->run.spectrumListPtr;
+      int N_spectra = slp->size();
+      SpectrumPtr s;
+      int def_array_length = 0;
+      BinaryDataArrayPtr mz_array, int_array;
+      Rcpp::List res_list(N_scans);
+      
+      For (int i = 0; i < N_scans; i++) {
+	int current_scan = whichScan[i];
+	if (current_scan <= 0 || (current_scan > N_spectra)) {
+	  Rprintf("Warning: index %d out of bounds.\n", current_scan);
+	  continue;
+	}
+	// Reading first "only" the header and subsequently the data - seems
+	// to be more stable. Also getting some parameters that we don't
+	// actually need - more for "stability".
+	s = slp->spectrum((current_scan - 1), false);
+	def_array_length = static_cast<int>(s->defaultArrayLength);
+	std::string s_id = s->id;
+	int ms_level = s->cvParam(MS_ms_level).valueAs<int>();
+	// double tic = s->cvParam(MS_total_ion_current).valueAs<double>();
+	// CVParam cv_param = s->cvParamChild(MS_scan_polarity);
+	// Load the binary data.
+	if (!s->hasBinaryData()) {
+	  s = slp->spectrum(s, true);
+	}
+	// Reading the two arrays separately allows us to catch eventual
+	// errors here.
+	mz_array = s->getMZArray();
+	int_array = s->getIntensityArray();
+	size_t n_mz = mz_array->data.size();
+	size_t n_int = int_array->data.size();
+	if (n_mz != def_array_length | n_int != def_array_length) {
+	  Rprintf("What the heck? Got n_mz = %d and n_int = %d\n", n_mz, n_int);
+	  Rprintf("Retrying...\n");
+	  // Re-load the spectrum.
+	  s = slp->spectrum((current_scan -1), false);
+	  def_array_length = static_cast<int>(s->defaultArrayLength);
 	  if (!s->hasBinaryData()) {
 	    s = slp->spectrum(s, true);
 	  }
-	  // Directy extract the binary arrays.
-	  size_t def_array_length = s->defaultArrayLength;
-	  // Reading the two arrays separately allows us to catch eventual
-	  // errors here.
-	  BinaryDataArrayPtr mz_array = s->getMZArray();
-	  BinaryDataArrayPtr int_array = s->getIntensityArray();
-	  size_t n_mz = mz_array->data.size();
-	  size_t n_int = int_array->data.size();
+	  mz_array = s->getMZArray();
+	  int_array = s->getIntensityArray();
+	  n_mz = mz_array->data.size();
+	  n_int = int_array->data.size();
 	  if (n_mz != def_array_length | n_int != def_array_length) {
-	    Rprintf("What the heck? Got n_mz = %d and n_int = %d\n", n_mz, n_int);
-	    Rprintf("Retrying...\n");
-	    // Completely re-load the file!
-	    // delete msd;
-	    // msd = NULL;
-	    // msd = new MSDataFile(filename);
-	    // slp = msd->run.spectrumListPtr;
-	    // N_spectra = slp->size();
-	    // Re-load the spectrum.
-	    s = slp->spectrum((current_scan -1), true);
-	    // if (!s->hasBinaryData()) {
-	    //   s = slp->spectrum(s, true);
-	    // }
-	    mz_array = s->getMZArray();
-	    int_array = s->getIntensityArray();
-	    n_mz = mz_array->data.size();
-	    n_int = int_array->data.size();
-	    if (n_mz != def_array_length | n_int != def_array_length) {
-	      Rprintf("Caught exception during spectra reading. Please report at https://github.com/sneumann/mzR/issues\n");
-	      // throw std::length_error("Length of mz and intensity arrays do not match");
-	      Rcpp::stop("Length of mz and intensity arrays do not match");
-	    }
+	    Rprintf("Caught exception during spectra reading. Please report at https://github.com/sneumann/mzR/issues\n");
+	    Rcpp::stop("Length of mz and intensity arrays do not match");
 	  }
-	  
-	  Rcpp::NumericMatrix peaks(n_mz, 2);
-	  
-	  if(n_mz != 0) {
-	    double* mz = &mz_array->data[0];
-	    double* intensity = &int_array->data[0];
-	    for (int j = 0; j < n_mz; j++) {
-	      peaks(j, 0) = *mz++;
-	      peaks(j, 1) = *intensity++;
-	    } 
-	  }
-	  res_list[i] = peaks;
 	}
-	return(res_list);
-      // } catch (std::exception &ex) {
-      // 	// Try it one more time?
-      // 	Rprintf("Caught exception during spectra reading. Please report at https://github.com/sneumann/mzR/issues\n");
-      // 	forward_exception_to_r(ex);
-      // } catch (...) {
-      // 	Rprintf("Caught unexpected exception during spectra reading. Please report at https://github.com/sneumann/mzR/issues\n");
-      // 	::Rf_error("c++ exception (unknown reason)");
-      // }
+	
+	Rcpp::NumericMatrix peaks(n_mz, 2);
+	
+	if(def_array_length != 0) {
+	  double* mz = &mz_array->data[0];
+	  double* intensity = &int_array->data[0];
+	  for (int j = 0; j < def_array_length; j++) {
+	    peaks(j, 0) = *mz++;
+	    peaks(j, 1) = *intensity++;
+	  } 
+	}
+	res_list[i] = peaks;
+      }
+      return(res_list);
     }
     Rprintf("Warning: pwiz not yet initialized.\n ");
     return Rcpp::List::create( );

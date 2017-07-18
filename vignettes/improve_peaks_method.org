@@ -144,7 +144,6 @@ Trying to reproduce the error in MSnbase issue #170.
       close(fh)
       rm(fh)
   }
-  ## 6 times OK: 2 with retries, 4 without.
 
   ## Try using peaks2.
   for (i in 1:length(fl)) {
@@ -178,8 +177,55 @@ Trying to reproduce the error in MSnbase issue #170.
   re-loading it then with data. Access binary arrays separately and evaluate if
   their sizes match. If not simply load the spectrum (with data) and get the
   arrays again. If that fails call =Rcpp::stop=. This did run 6 times without
-  problem (2 runs had multiple retries, the others not).
+  problem (2 runs had multiple retries, the others not). The next day 2 out of 6
+  failed (both on file 259) with an error: 
+  #+BEGIN_EXAMPLE
+     Error in object@backend$getPeakList3(as.integer(scans)) : 
+      [References::resolve()] Failed to resolve reference.
+      object type: N4pwiz6msdata14DataProcessingE
+      reference id: pwiz_ms level
+      referent list: 1
+	pwiz_Reader_ABI_conversion
+  #+END_EXAMPLE
+  and one had a segfault. The other 3 were OK.
 - =.peaks2=:
+
+Evaluation of =.peaks3=:
+- 2017-07-18:
+  - macOS: reading spectrum directly with data. OK: 2 Segfault: 5 Other
+    error: 0.
+  - macOS: reading first spectrum without and load with data.
+  - Linux: interestingly, =peaks= works absolutely fine.
+
+Testing it using other input files:
+#+BEGIN_SRC R
+  ## Using different input files...
+  library(mzR)
+  SN <- "/Users/jo/data/2016/2016_06/"
+  fl <- dir(SN, full.names = TRUE)
+  ## peaks
+  for (i in 1:length(fl)) {
+      cat("file: ", i, "\n")
+      fh <- openMSfile(fl[i])
+      pks <- mzR::peaks(fh)
+      close(fh)
+      rm(fh)
+  }
+  ## in file 309 I get a
+  ## Error in object@backend$getPeakList(x) : 
+  ##   [MSData::Spectrum::getMZIntensityPairs()] Sizes do not match.
+
+  ## Try using peaks3.
+  for (i in 1:length(fl)) {
+      cat("file: ", i, "\n")
+      fh <- openMSfile(fl[i])
+      pks <- mzR:::.peaks3(fh)
+      close(fh)
+      rm(fh)
+  }
+
+
+#+END_SRC
 
 I don't get any errors if we're just reading the peaks and closing the
 connection etc. but once I add additional calls I get the error. Actually no,
@@ -192,7 +238,10 @@ Evaluating the performance of the fix.
 #+BEGIN_SRC R
   ## Do this on a simple file.
 
-  ## Do this on a gzipped file.
+  ## Do this on a gzipped file.(erwinia)
+
+  ## On a gzipped profile file.
+  ## On the same file not zipped
 #+END_SRC
 
 
