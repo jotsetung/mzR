@@ -1,8 +1,12 @@
+* Introduction
+
 We could try to improve the =peaks= method by performing the loop in C instead of
 R. This might speed up things a) because a for loop in C is supposedly faster
 than =sapply= in R and b) there is no need to always re-access the run of the
 =msdata=. Whether the latter really improves performance has to be however
 determined.
+
+* Testing implementations
 
 Below we benchmark the =getPeakList= and =getPeakList2= (and =getPeakList3=) C++ methods (called /via/
 =mzR::peaks= and =mzR:::.peaks2= (and =mzR:::.peaks3=) respectively.
@@ -223,7 +227,7 @@ Testing it using other input files:
       close(fh)
       rm(fh)
   }
-
+  ## Works nicely 3 times (although had to re-read some spectra).
 
 #+END_SRC
 
@@ -231,17 +235,241 @@ I don't get any errors if we're just reading the peaks and closing the
 connection etc. but once I add additional calls I get the error. Actually no,
 now I get the error each time.
 
-Other performance issues: getting peaks and/or header from an gz file is slooow.
+* Performance tests
 
-Evaluating the performance of the fix.
+Evaluating the performance of various methods:
+- Just calling =mzR::peaks=.
+- Using the =mzR:::.peaks3= that loads first the spectra without data, loads then
+  the data with the possibility to re-load if the length of the mz and intensity
+  values don't match.
+- Calling =mzR::header= followed by =mzR::peaks=. That's the current fix to the
+  random errors.
+- Calling =mzR:header= but fetching only the header of the last spectrum followed
+  by =mzR::peaks=. This might eventually be faster than reading all header.
+- Using the =mzR:::.peaks2= that essentially combines the =header= and =peaks= calls,
+  i.e. before reading the spectra data it calls the =getScanHeaderInfo= method in
+  C++ to get the header info on the last spectrum.
 
 #+BEGIN_SRC R
-  ## Do this on a simple file.
+  library(microbenchmark)
+  library(mzR)
+  library(testthat)
 
-  ## Do this on a gzipped file.(erwinia)
+  allHdr <- function(x) {
+      fh <- mzR::openMSfile(x)
+      mzR::header(fh)
+      mzR::peaks(fh)
+      mzR::close(fh)
+  }
+
+  lastHdr <- function(x) {
+      fh <- mzR::openMSfile(x)
+      mzR::header(fh, length(fh))
+      mzR::peaks(fh)
+      mzR::close(fh)
+  }
+
+  pks <- function(x) {
+      fh <- mzR::openMSfile(x)
+      mzR::peaks(fh)
+      mzR::close(fh)
+  }
+
+  pks2 <- function(x) {
+      fh <- mzR::openMSfile(x)
+      mzR:::.peaks2(fh)
+      mzR::close(fh)
+  }
+
+  pks3 <- function(x) {
+      fh <- mzR::openMSfile(x)
+      mzR:::.peaks3(fh)
+      mzR::close(fh)
+  }
+
+  ## o mzML file
+  ## Check mzML
+  fl <- "/Users/jo/data/2017/mzML/130616_10045182_PC_POS.mzML"
+  microbenchmark(pks(fl), pks3(fl), allHdr(fl), lastHdr(fl), pks2(fl), times = 5)
+  ## Unit: seconds
+  ##         expr      min       lq     mean   median       uq      max neval cld
+  ##      pks(fl) 1.394920 1.406448 1.442433 1.420307 1.453936 1.536552     5 ab 
+  ##     pks3(fl) 1.352819 1.383502 1.382203 1.384211 1.391789 1.398692     5 a  
+  ##   allHdr(fl) 1.576612 1.597881 1.635925 1.626248 1.637946 1.740939     5   c
+  ##  lastHdr(fl) 1.443671 1.460268 1.532864 1.524958 1.553637 1.681785     5  bc
+  ##     pks2(fl) 1.329701 1.342448 1.368096 1.348728 1.394077 1.425526     5 a  
+  ## Reading all headers is slowest on an mzML. Reading the last header within C++
+  ## is faster than reading it from R.
+  gc()
+
+  ## Check mzML.gz
+  fl <- "/Users/jo/data/2017/mzML/130616_10045182_PC_POS.mzML.gz"
+  microbenchmark(pks(fl), pks3(fl), allHdr(fl), lastHdr(fl), pks2(fl), times = 5)
+  ## Unit: seconds
+  ##         expr       min        lq      mean    median        uq       max neval
+  ##      pks(fl)  2.214861  2.280543  2.335974  2.315181  2.349130  2.520155     5
+  ##     pks3(fl)  2.218721  2.240677  2.263187  2.270483  2.277373  2.308678     5
+  ##   allHdr(fl) 11.825709 11.926885 12.094402 12.147909 12.173469 12.398040     5
+  ##  lastHdr(fl)  2.592132  2.682596  2.685217  2.686628  2.717629  2.747099     5
+  ##  cld
+  ##  a  
+  ##  a  
+  ##    c
+  ##   b 
+  ## Reading all header and peaks from a gzipped mzML is very slow.
+  gc()
 
   ## On a gzipped profile file.
-  ## On the same file not zipped
+  fl <- "/Users/jo/data/2017/profile/090217_21m_RT_-80_2h_b-AB-profile.mzML"
+  microbenchmark(pks(fl), pks3(fl), allHdr(fl), lastHdr(fl), times = 5)
+  ## Unit: seconds
+  ##         expr      min       lq     mean   median       uq      max neval cld
+  ##      pks(fl) 7.958832 8.039146 8.139619 8.217821 8.233240 8.249055     5  ab
+  ##     pks3(fl) 7.882784 7.883911 7.913464 7.897819 7.905865 7.996943     5  a 
+  ##   allHdr(fl) 8.058758 8.104823 8.255455 8.169696 8.343141 8.600857     5   b
+  ##  lastHdr(fl) 8.114813 8.238135 8.357591 8.258226 8.395280 8.781502     5   b
+  ## .peaks3 is fastest, because of the loop being performed in C++. No difference
+  ## between reading all header and the last header, but reading all header seems
+  ## to be slightly faster. 
+  gc()
+
+  fl <- "/Users/jo/data/2017/profile/090217_21m_RT_-80_2h_b-AB-profile.mzML.gz"
+  microbenchmark(pks(fl), pks3(fl), allHdr(fl), lastHdr(fl), times = 5)
+  ## Unit: seconds
+  ##         expr      min       lq     mean   median       uq      max neval cld
+  ##      pks(fl) 11.79032 11.86828 12.03672 12.09024 12.19241 12.24236     5 a  
+  ##     pks3(fl) 11.69408 11.96886 12.01896 12.01880 12.19141 12.22166     5 a  
+  ##   allHdr(fl) 22.87818 23.20817 23.41094 23.36242 23.72018 23.88575     5   c
+  ##  lastHdr(fl) 13.84542 13.90009 14.05186 14.09708 14.11639 14.30030     5  b 
+  ## Reading all header is slowest for a gzipped mzML file.
+  gc()
+
+  ## o mzXML file
+  fl <- "/Users/jo/data/2017/mzXML/1405_blk1.mzXML"
+  microbenchmark(pks(fl), pks3(fl), allHdr(fl), lastHdr(fl), times = 5)
+  ## Unit: seconds
+  ##         expr      min       lq     mean   median       uq      max neval cld
+  ##      pks(fl) 2.258597 2.348302 2.354607 2.381167 2.385742 2.399225     5 a  
+  ##     pks3(fl) 2.491467 2.523526 2.552930 2.534098 2.559481 2.656078     5  b 
+  ##   allHdr(fl) 3.173862 3.191319 3.202301 3.192535 3.211511 3.242281     5   c
+  ##  lastHdr(fl) 2.382354 2.481771 2.485747 2.482826 2.525500 2.556283     5  b 
+  ## Reading all header is slowest - obviously. .peaks3 is also not that faster.
+  gc()
+
+  fl <- "/Users/jo/data/2017/mzXML/1405_blk1.mzXML.gz"
+  microbenchmark(pks(fl), pks3(fl), allHdr(fl), lastHdr(fl), times = 5)
+  ## Unit: seconds
+  ##        expr      min       lq     mean   median       uq      max neval cld
+  ##     pks(fl) 15.53468 15.72740 15.76441 15.72938 15.82930 16.00128     5 a  
+  ##    pks3(fl) 29.65758 30.02418 30.29582 30.22198 30.32744 31.24793     5   c
+  ##  allHdr(fl) 29.58538 30.11704 30.39636 30.32351 30.45552 31.50034     5   c
+  ## lastHdr(fl) 27.25839 27.85116 28.04926 27.99833 28.40801 28.73042     5  b 
+  ## Puzzling - peaks3 is slower than reading the last header.
+  gc()
+
+  ## Next
+  fl <- "/Users/jo/data/2017/mzXML/LockMass_test.mzXML"
+  microbenchmark(pks(fl), pks3(fl), allHdr(fl), lastHdr(fl), times = 5)
+  ## Unit: milliseconds
+  ##         expr       min        lq      mean    median        uq       max neval
+  ##      pks(fl)  65.44896  67.14518  68.05894  67.44726  67.93962  72.31370     5
+  ##     pks3(fl)  71.98851  72.56906  73.32947  73.40593  73.62491  75.05897     5
+  ##   allHdr(fl) 126.46351 127.24337 128.05568 127.56220 128.95737 130.05193     5
+  ##  lastHdr(fl)  97.47020  99.22585 102.02024  99.74472 100.66745 112.99297     5
+  ##  cld
+  ##  a  
+  ##  a  
+  ##    c
+  ##   b 
+  ## So, anything that reads additional information is slower.
+  gc()
+
+  fl <- "/Users/jo/data/2017/mzXML/LockMass_test.mzXML.gz"
+  microbenchmark(pks(fl), pks3(fl), allHdr(fl), lastHdr(fl), times = 5)
+  ## Unit: milliseconds
+  ##         expr       min        lq      mean    median        uq       max neval
+  ##      pks(fl)  562.7115  566.3069  574.9825  572.8058  579.4714  593.6167     5
+  ##     pks3(fl) 1387.8384 1388.6958 1423.8043 1412.1487 1434.5396 1495.7991     5
+  ##   allHdr(fl) 1096.8439 1115.1526 1137.4079 1124.2245 1160.8706 1189.9479     5
+  ##  lastHdr(fl) 1051.0545 1051.8448 1067.6690 1058.1910 1065.0610 1112.1935     5
+  ##   cld
+  ##  a   
+  ##     d
+  ##    c 
+  ##   b  
+  ## .peaks3 slowest 
+  gc()
 #+END_SRC
 
+The double call =mzR::header= and =mzR::peaks= is costly on zipped files while
+almost no difference can be observed on uncompressed mzML files.
 
+At last doing a torture test on the /fixed/ method to evaluate whether it is
+/really/ save.
+
+#+BEGIN_SRC R
+  library(mzR)
+  SN <- "/Users/jo/data/2016/2016-11/NoSN/"
+  fl <- dir(SN, full.names = TRUE)
+
+  torture_test <- function(files, FUN, iterations = 10) {
+      for (i in 1:iterations) {
+	  cat("\nIteration", i, "of", iterations, "\n\n")
+	  for (j in 1:length(fl)) {
+	      if (j %% 20 == 0)
+		  cat(j, "files processed\n")
+	      FUN(fl[j])
+	  }
+      }
+  }
+
+  fix_fun <- function(x) {
+      fh <- mzR::openMSfile(x)
+      hdr <- mzR::header(fh, length(fh))
+      pks <- mzR::peaks(fh)
+      mzR::close(fh)
+  }
+
+  fix_fun_2 <- function(x) {
+      fh <- mzR::openMSfile(x)
+      spcts <- 1:20
+      hdr <- mzR::header(fh, 20)
+      pks <- mzR::peaks(fh, spcts)
+      mzR::close(fh)
+  }
+
+  torture_test(fl, FUN = fix_fun)
+  torture_test(fl, FUN = fix_fun_2)
+
+  ## reading the last header and calling peaks works.
+
+  fail_fun <- function(x) {
+      fh <- mzR::openMSfile(x)
+      pks <- mzR::peaks(fh)
+      mzR::close(fh)
+  }
+  torture_test(fl, FUN = fail_fun)
+
+#+END_SRC
+
++ The approach =header(last_idx)= followed by =peaks= passed the test on macOS.
++ Just reading =peaks= readily fails on macOS.
+
+** Summary
+
++ Moving the loop over scan indices from R (=sapply=) to C++ (=for= loop) seems to
+  be reasonable.
++ The error/problem we frequently encounter on macOS seems to be completely
+  absent on Linux system(s). Thus, also a partial fix might do it.
++ A considerable difference can be observed between /mzML/ and /mzXML/ files. While
+  reading header from an /mzML/ file seems to be quite fast, even from compressed
+  ones, reading header, or even using =.peaks3= on a compressed /mzXML/ file is
+  very slow (twice the run time of a single =peaks= call).
++ Using =header= with =scans = last_idx= has to be checked, but if that works it
+  could be a relatively nice replacement of reading all headers. It has a
+  performance gain (over reading the full header) on /mzML/ files and partially
+  also on /mzXML/ files.
++ Since there seems to be quite some differences between /mzML/ and /mzXML/ files,
+  it might be worth to consider the two separately.
++ Reading from gzipped files is slower, especially from gzipped /mzXML/ files. For
+  these, reading =peaks= and =header= is very costly.

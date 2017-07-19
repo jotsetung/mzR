@@ -341,34 +341,18 @@ Rcpp::List RcppPwiz::getPeakList ( int whichScan )
 // Trying to avoid issue #170 in MSnbase.
 // whichScan can be a integer vector instead of a single int!
 Rcpp::List RcppPwiz::getPeakList2 (Rcpp::IntegerVector whichScan) {
-    Rprintf("Info: calling getPeakList2.\n ");
     if (msd != NULL) {
+      int def_array_length, n_mz, n_int;
+      BinaryDataArrayPtr mz_array, int_array;
       int N_scans = whichScan.size();
-      RAMPAdapter * adapter = new RAMPAdapter(filename);
-      ScanHeaderStruct hdr;
-      // int N_spectra = slp->size();
-      int N_spectra = adapter->scanCount();
-      Rcpp::List res_list(N_scans);
+      // Reading the header for the last scan...
+      Rcpp::IntegerVector dummy(1, whichScan[(N_scans - 1)]);
+      Rcpp::DataFrame tmp = getScanHeaderInfo(dummy);
+      // Now continue with the rest.
       SpectrumListPtr slp = msd->run.spectrumListPtr;
+      int N_spectra = slp->size();
+      Rcpp::List res_list(N_scans);
 
-      // two separate loops, reading header and then the spectra...
-      for (int i = 0; i < N_scans; i++) {
-	size_t current_scan = whichScan[i];
-	if (current_scan <= 0 || (current_scan > N_spectra)) {
-	  Rprintf("Warning: index %d out of bounds.\n", current_scan);
-	  continue;
-	}
-	// First use RAMPAdaptor to read the header.
-	adapter->getScanHeader((current_scan -1), hdr, false);
-	SpectrumPtr s = slp->spectrum(current_scan -1, false);
-      }
-      delete adapter;
-      adapter = NULL;
-
-      delete msd;
-      msd = NULL;
-      msd = new MSDataFile(filename);
-      slp = msd->run.spectrumListPtr;
       for (int i = 0; i < N_scans; i++) {
 	size_t current_scan = whichScan[i];
 	if (current_scan <= 0 || (current_scan > N_spectra)) {
@@ -376,42 +360,26 @@ Rcpp::List RcppPwiz::getPeakList2 (Rcpp::IntegerVector whichScan) {
 	  continue;
 	}
 	// Then get the spectra using pwiz...
-	SpectrumPtr s = slp->spectrum((current_scan -1), false);
-	s = slp->spectrum(s, true);
-	// std::string s_id = s->id;
-	// CVParam cv_param = s->cvParamChild(MS_scan_polarity);
+	SpectrumPtr s = slp->spectrum((current_scan -1));
+	if (!s->hasBinaryData()) {
+	  s = slp->spectrum(s, true);
+	}
+	def_array_length = static_cast<int>(s->defaultArrayLength);
+	mz_array = s->getMZArray();
+	int_array = s->getIntensityArray();
+	n_mz = mz_array->data.size();
+	n_int = int_array->data.size();
+	if (n_mz != def_array_length | n_int != def_array_length) {
+	  Rcpp::stop("Length of mz and intensity arrays does not match");
+	}
 
-	// To read the data using RAMPAdaptor.
-	// vector<double> buffer;
-	// adapter->getScanPeaks(current_scan - 1, buffer);
-	// int buffer_len = buffer.size();
-	// if (buffer_len != 0) {
-	//   Rcpp::NumericMatrix peaks(buffer_len / 2, 2);
-	//   int index = 0;
-	//   for (int j = 0; j < buffer_len; j+=2) {
-	//     // peaks(index, 0) = static_cast<double>(buffer[j]);
-	//     // peaks(index, 1) = static_cast<double>(buffer[j+1]);
-	//     peaks(index, 0) = buffer[j];
-	//     peaks(index, 1) = buffer[j+1];
-	//     index++;
-	//   }
-	//   res_list[i] = peaks;
-	// } else {
-	//   res_list[i] = Rcpp::NumericMatrix(0, 2);
-	// }
-	
-        vector<MZIntensityPair> pairs;
-	s->getMZIntensityPairs(pairs);
-	
-	Rcpp::NumericMatrix peaks(pairs.size(), 2);
-	
-	if(pairs.size()!=0) {
-	  for (int j = 0; j < pairs.size(); j++) {
-	    peaks(j, 0) = pairs[j].mz;
-	    peaks(j, 1) = pairs[j].intensity;
-	    // MZIntensityPair p = pairs.at(j);
-	    // peaks(i,0) = p.mz;
-	    // peaks(i,1) = p.intensity;
+	Rcpp::NumericMatrix peaks(n_mz, 2);
+	if(def_array_length != 0) {
+	  double* mz = &mz_array->data[0];
+	  double* intensity = &int_array->data[0];
+	  for (int j = 0; j < def_array_length; j++) {
+	    peaks(j, 0) = *mz++;
+	    peaks(j, 1) = *intensity++;
 	  } 
 	}
 	res_list[i] = peaks;
@@ -425,17 +393,16 @@ Rcpp::List RcppPwiz::getPeakList2 (Rcpp::IntegerVector whichScan) {
 // Trying to avoid issue #170 in MSnbase.
 // whichScan can be a integer vector instead of a single int!
 Rcpp::List RcppPwiz::getPeakList3 (Rcpp::IntegerVector whichScan) {
-    Rprintf("Info: calling getPeakList3.\n ");
     if (msd != NULL) {
-      size_t N_scans = whichScan.size();
+      SpectrumPtr s;
+      BinaryDataArrayPtr mz_array, int_array;
       SpectrumListPtr slp = msd->run.spectrumListPtr;
       int N_spectra = slp->size();
-      SpectrumPtr s;
       int def_array_length = 0;
-      BinaryDataArrayPtr mz_array, int_array;
+      int N_scans = whichScan.size();
       Rcpp::List res_list(N_scans);
-      
-      For (int i = 0; i < N_scans; i++) {
+
+      for (int i = 0; i < N_scans; i++) {
 	int current_scan = whichScan[i];
 	if (current_scan <= 0 || (current_scan > N_spectra)) {
 	  Rprintf("Warning: index %d out of bounds.\n", current_scan);
@@ -450,16 +417,16 @@ Rcpp::List RcppPwiz::getPeakList3 (Rcpp::IntegerVector whichScan) {
 	int ms_level = s->cvParam(MS_ms_level).valueAs<int>();
 	// double tic = s->cvParam(MS_total_ion_current).valueAs<double>();
 	// CVParam cv_param = s->cvParamChild(MS_scan_polarity);
-	// Load the binary data.
+	// Load the mz/intensity data into the spectrum.
 	if (!s->hasBinaryData()) {
 	  s = slp->spectrum(s, true);
 	}
 	// Reading the two arrays separately allows us to catch eventual
-	// errors here.
+	// errors here and re-read if needed. This happens mostly on macOS.
 	mz_array = s->getMZArray();
 	int_array = s->getIntensityArray();
-	size_t n_mz = mz_array->data.size();
-	size_t n_int = int_array->data.size();
+	int n_mz = mz_array->data.size();
+	int n_int = int_array->data.size();
 	if (n_mz != def_array_length | n_int != def_array_length) {
 	  Rprintf("What the heck? Got n_mz = %d and n_int = %d\n", n_mz, n_int);
 	  Rprintf("Retrying...\n");
