@@ -47,6 +47,8 @@ setMethod("header",
               res$filterString <- NA_character_
               res$spectrumId <- paste0("scan=", res$acquisitionNum)
               res$centroided <- NA
+              res$scanWindowLowerLimit <- NA_real_
+              res$scanWindowUpperLimit <- NA_real_
               res
 })
 
@@ -63,6 +65,8 @@ setMethod("header",
               res$filterString <- NA_character_
               res$spectrumId <- paste0("scan=", res$acquisitionNum)
               res$centroided <- NA
+              res$scanWindowLowerLimit <- NA_real_
+              res$scanWindowUpperLimit <- NA_real_
               res
           })
 

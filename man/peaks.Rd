@@ -115,7 +115,10 @@
   \code{mergedResultStartScanNum}, \code{mergedResultEndScanNum},
   \code{spectrumId}, \code{centroided} (\code{logical} whether the data
   of the spectrum is in centroid mode or profile mode; only for pwiz
-  backend) and \code{injectionTime} (ion injection time, in milliseconds)
+  backend), \code{scanWindowLowerLimit} (\code{numeric}, only for pwiz
+  backend, expected in m/z unit), \code{scanWindowUpperLimit}
+  (\code{numeric}, only for pwiz backend, expected in m/z unit) and
+  \code{injectionTime} (ion injection time, in milliseconds)
   when available in the original file. If multiple scans are queried, a
   \code{data.frame} is returned with the scans reported along the
   rows.

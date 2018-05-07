@@ -9,7 +9,7 @@ test_length <- function() {
   file <- system.file('cdf/ko15.CDF', package = "msdata")
   cdf <- openMSfile(file, backend="netCDF")     
   
-  checkEquals(length(cdf),1278)
+  checkEquals(length(cdf), 1278)
   
   close(cdf)
 }
@@ -37,10 +37,10 @@ test_peaks <- function() {
 
 test_header <- function() { 
   file <- system.file('cdf/ko15.CDF', package = "msdata")
-  cdf <- openMSfile(file, backend="netCDF")        
+  cdf <- openMSfile(file, backend="netCDF")
 
   h <- header(cdf)
-  checkEquals(ncol(h), 22)
+  checkEquals(ncol(h), 24)
   checkEquals(nrow(h), 1278)
   checkTrue(any(colnames(h) == "centroided"))
   checkTrue(all(is.na(h$centroided)))
@@ -49,11 +49,11 @@ test_header <- function() {
   checkEquals(h$spectrumId, paste0("scan=", h$acquisitionNum))
   
   h <- header(cdf, 1)
-  checkEquals(ncol(h), 22)
+  checkEquals(ncol(h), 24)
   checkEquals(nrow(h), 1)
 
   h <- header(cdf, 2:3)
-  checkEquals(ncol(h), 22)
+  checkEquals(ncol(h), 24)
   checkEquals(nrow(h), 2)
 
   close(cdf)

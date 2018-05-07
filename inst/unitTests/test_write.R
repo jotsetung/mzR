@@ -185,7 +185,9 @@ test_copyWriteMSData <- function() {
     rt_col <- colnames(hdr_mod) == "retentionTime"
     checkEquals(hdr_mod[, rt_col], hdr_new[, rt_col], tolerance = 0.01)
     cn <- colnames(hdr)[!(colnames(hdr) %in% c("injectionTime", "retentionTime",
-                                               "filterString", "spectrumId"))]
+                                               "filterString", "spectrumId",
+                                               "scanWindowLowerLimit",
+                                               "scanWindowUpperLimit"))]
     checkEquals(hdr_mod[, cn], hdr_new[, cn])
     ## checkEquals(ii, ii_new)
 
@@ -243,7 +245,9 @@ test_copyWriteMSData <- function() {
     cn <- colnames(hdr_sub)[!(colnames(hdr_sub) %in% c("injectionTime",
                                                        "retentionTime",
                                                        "filterString",
-                                                       "spectrumId"))]
+                                                       "spectrumId",
+                                                       "scanWindowLowerLimit",
+                                                       "scanWindowUpperLimit"))]
     checkEquals(hdr_sub[, cn], hdr_new[, cn])    
     
     ## Other mzML:
@@ -277,8 +281,10 @@ test_copyWriteMSData <- function() {
     hdr_2 <- header(in_file)
     pks_2 <- peaks(in_file)
     mzR::close(in_file)
-    checkEquals(hdr[, colnames(hdr) != "spectrumId"],
-                hdr_2[, colnames(hdr_2) != "spectrumId"])
+    cn <- colnames(hdr)[!(colnames(hdr) %in% c("spectrumId",
+                                               "scanWindowLowerLimit",
+                                               "scanWindowUpperLimit"))]
+    checkEquals(hdr[, cn], hdr_2[, cn])
     checkEquals(pks, pks_2)
     checkEquals(ii, ii_2)
 }
@@ -441,7 +447,9 @@ test_writeMSData <- function() {
     cn <- colnames(hdr_mod)[!(colnames(hdr_mod) %in% c("retentionTime",
                                                        "injectionTime",
                                                        "filterString",
-                                                       "spectrumId"))]
+                                                       "spectrumId",
+                                                       "scanWindowLowerLimit",
+                                                       "scanWindowUpperLimit"))]
     checkEquals(hdr_mod[, cn], hdr_2[, cn])
     
     ## Subset. These checks ensure that the scan - precursor scan are mapped
@@ -508,7 +516,9 @@ test_writeMSData <- function() {
     cn <- colnames(hdr_sub)[!(colnames(hdr_sub) %in% c("injectionTime",
                                                        "retentionTime",
                                                        "filterString",
-                                                       "spectrumId"))]
+                                                       "spectrumId",
+                                                       "scanWindowLowerLimit",
+                                                       "scanWindowUpperLimit"))]
     checkEquals(hdr_sub[, cn], hdr_new[, cn])
     
     ## Other mzML:
@@ -541,8 +551,10 @@ test_writeMSData <- function() {
     pks_2 <- peaks(in_file)
     mzR::close(in_file)
     checkEquals(pks, pks_2)
-    checkEquals(hdr[, colnames(hdr_2) != "spectrumId"],
-                hdr_2[, colnames(hdr_2) != "spectrumId"])
+    cn <- colnames(hdr)[!(colnames(hdr) %in% c("spectrumId",
+                                               "scanWindowLowerLimit",
+                                               "scanWindowUpperLimit"))]
+    checkEquals(hdr[, cn], hdr_2[, cn])
 
     ## mzData:
     test_file <- system.file("iontrap", "extracted.mzData", package = "msdata")

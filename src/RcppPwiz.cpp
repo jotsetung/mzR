@@ -206,6 +206,8 @@ Rcpp::DataFrame RcppPwiz::getScanHeaderInfo (Rcpp::IntegerVector whichScan)
       Rcpp::StringVector filterString(N_scans);
       Rcpp::StringVector spectrumId(N_scans);
       Rcpp::LogicalVector centroided(N_scans);
+      Rcpp::NumericVector scanWindowLowerLimit(N_scans);
+      Rcpp::NumericVector scanWindowUpperLimit(N_scans);
       
       for (int i = 0; i < N_scans; i++)
 	{
@@ -222,7 +224,17 @@ Rcpp::DataFrame RcppPwiz::getScanHeaderInfo (Rcpp::IntegerVector whichScan)
 	  polarity[i] = (param.cvid==MS_negative_scan ? 0 : (param.cvid==MS_positive_scan ? +1 : -1 ) );
 	  ionInjectionTime[i] = scan.cvParam(MS_ion_injection_time).valueAs<double>();
 	  filterString[i] = scan.cvParam(MS_filter_string).value.empty() ? NA_STRING : Rcpp::String(scan.cvParam(MS_filter_string).value);
-
+	  // scanWindow.
+	  if (scan.scanWindows.empty()) {
+	    scanWindowLowerLimit[i] = NA_REAL;
+	    scanWindowUpperLimit[i] = NA_REAL;
+	  } else {
+	    if (scan.scanWindows.size() > 1)
+	      Rprintf("Warning: found more than one scan window, but will only report the first");
+	    ScanWindow& scanW = scan.scanWindows[0];
+	    scanWindowLowerLimit[i] = scanW.cvParam(MS_scan_window_lower_limit).value.empty() ? NA_REAL : scanW.cvParam(MS_scan_window_lower_limit).valueAs<double>();
+	    scanWindowUpperLimit[i] = scanW.cvParam(MS_scan_window_upper_limit).value.empty() ? NA_REAL : scanW.cvParam(MS_scan_window_upper_limit).valueAs<double>();
+	  }
 	  peaksCount[i] = scanHeader.peaksCount;
 	  totIonCurrent[i] = scanHeader.totIonCurrent;
 	  retentionTime[i] = scanHeader.retentionTime;
@@ -248,7 +260,7 @@ Rcpp::DataFrame RcppPwiz::getScanHeaderInfo (Rcpp::IntegerVector whichScan)
       delete adapter;
       adapter = NULL;
 
-      Rcpp::List header(25);
+      Rcpp::List header(27);
       std::vector<std::string> names;
       int i = 0;
       names.push_back("seqNum");
@@ -301,6 +313,10 @@ Rcpp::DataFrame RcppPwiz::getScanHeaderInfo (Rcpp::IntegerVector whichScan)
       header[i++] = Rcpp::wrap(spectrumId);
       names.push_back("centroided");
       header[i++] = Rcpp::wrap(centroided);
+      names.push_back("scanWindowLowerLimit");
+      header[i++] = Rcpp::wrap(scanWindowLowerLimit);
+      names.push_back("scanWindowUpperLimit");
+      header[i++] = Rcpp::wrap(scanWindowUpperLimit);
       
       header.attr("names") = names;
       
@@ -618,6 +634,8 @@ void RcppPwiz::addSpectrumList(MSData& msd,
   Rcpp::StringVector filterString = spctr_header["filterString"];
   Rcpp::StringVector spectrumId = spctr_header["spectrumId"];
   Rcpp::LogicalVector centroided = spctr_header["centroided"];
+  Rcpp::NumericVector scanWindowLowerLimit = spctr_header["scanWindowLowerLimit"];
+  Rcpp::NumericVector scanWindowUpperLimit = spctr_header["scanWindowUpperLimit"];  
   
   // From MSnbase::Spectrum        Column in the header
   // msLevel integer               $msLevel
@@ -721,6 +739,12 @@ void RcppPwiz::addSpectrumList(MSData& msd,
       if (precursor_idx >= 0) {
 	prec.spectrumID = spectrumId[precursor_idx];
       }
+    }
+    // scan window: lower/upper limits
+    if (scanWindowLowerLimit[i] != NA_REAL) {
+      spct_scan.scanWindows.push_back(ScanWindow(scanWindowLowerLimit[i],
+						 scanWindowUpperLimit[i],
+						 MS_m_z));
     }
     // [X] collisionEnergy
     // [ ] ionisationEnergy

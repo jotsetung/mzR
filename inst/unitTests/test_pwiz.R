@@ -76,7 +76,8 @@ test_getScanHeaderInfo <- function() {
     ## Read single scan header.
     scan_3 <- header(mzml, scans = 3)
     cn <- names(scan_3)
-    cn <- cn[cn != "spectrumId"]
+    cn <- cn[!(cn %in% c("spectrumId", "scanWindowLowerLimit",
+                         "scanWindowUpperLimit"))]
     scan_3_ramp <- header(ramp, scans = 3)
     ## Ramp does not read polarity
     scan_3$polarity <- 0

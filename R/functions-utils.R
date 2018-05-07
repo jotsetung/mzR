@@ -37,19 +37,24 @@
                   mergedResultEndScanNum = "numeric",
                   injectionTime = "numeric",
                   filterString = "character",
-                  centroided = "logical"
+                  centroided = "logical",
+                  spectrumId = "character",
+                  scanWindowLowerLimit = "numeric",
+                  scanWindowUpperLimit = "numeric"
                   )
     if (!is.data.frame(x))
         return("'x' is supposed to be a data.frame")
-    if (!(all(names(req_cols) %in% colnames(x))))
-        return(paste0("'x' is missing one or more required columns: ",
-                      paste(names(req_cols), collapse = ", ")))
+    if (!any(colnames(x) == "scanWindowLowerLimit"))
+        x$scanWindowLowerLimit <- NA_real_
+    if (!any(colnames(x) == "scanWindowUpperLimit"))
+        x$scanWindowUpperLimit <- NA_real_    
     ## Add spectrumId if not already provided (issue #124)
     if (!any(colnames(x) == "spectrumId"))
         x$spectrumId <- paste0("scan=", x$acquisitionNum)
     x$spectrumId <- as.character(x$spectrumId)
-    ## Hack in the spectrumId column.
-    req_cols <- c(req_cols, spectrumId = "character")
+    if (!(all(names(req_cols) %in% colnames(x))))
+        return(paste0("'x' is missing one or more required columns: ",
+                      paste(names(req_cols), collapse = ", ")))
     ## Subset and order the columns
     x <- x[, names(req_cols)]
     cn_x <- colnames(x)

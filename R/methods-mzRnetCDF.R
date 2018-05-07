@@ -95,6 +95,8 @@ setMethod("header",
                             injectionTime = rep(-1, length(scans)),
                             spectrumId = paste0("scan=", scans),
                             centroided = NA,
+                            scanWindowLowerLimit = NA_real_,
+                            scanWindowUpperLimit = NA_real_,
                             stringsAsFactors = FALSE)
 
             return(result)
